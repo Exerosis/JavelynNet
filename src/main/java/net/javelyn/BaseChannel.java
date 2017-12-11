@@ -1,49 +1,55 @@
 package net.javelyn;
 
-import java.nio.ByteBuffer;
+import java.nio.channels.ByteChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 
-import static java.nio.ByteBuffer.*;
+import static net.javelyn.Buffer.make;
 
 public class BaseChannel<Key> implements Channel<Key> {
-	private final List<BiConsumer<Key, ByteBuffer>> receiveListeners = new ArrayList<>();
-	private BiConsumer<ByteBuffer, Protocol<Key>> protocol;
-	private ByteBuffer buffer;
+	private final List<BiConsumer<Key, Buffer>> receiveListeners = new ArrayList<>();
+	private BiConsumer<Buffer, Protocol<Key>> protocol;
+	private final Buffer buffer;
+	private final ByteChannel channel;
 	
-	public BaseChannel() {
-		this(2);
+	public BaseChannel(ByteChannel channel) {
+		this(2, channel);
 	}
 	
-	public BaseChannel(Number initialCapacity) {
-		buffer = allocate(initialCapacity.intValue());
+	public BaseChannel(Number initialCapacity, ByteChannel channel) {
+		this(initialCapacity, channel, null);
+	}
+	
+	public BaseChannel(Number initialCapacity, ByteChannel channel, BiConsumer<Buffer, Protocol<Key>> protocol) {
+		this.protocol = protocol;
+		buffer = make((buffer, depth) -> {
+			try {
+				buffer.compact().flip();
+				while (buffer.remaining() < depth)
+					channel.read(buffer);
+				buffer.flip();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}, initialCapacity.intValue());
+		this.channel = channel;
 		takeHead();
 	}
 	
 	@Override
-	public List<BiConsumer<Key, ByteBuffer>> getReceiveListeners() {
+	public List<BiConsumer<Key, Buffer>> getReceiveListeners() {
 		return receiveListeners;
 	}
 	
 	@Override
-	public Channel header(Number headerLength, BiConsumer<ByteBuffer, Protocol<Key>> protocol) {
-		if (buffer.capacity() < headerLength.intValue())
-			buffer = allocate(headerLength.intValue());
+	public Channel header(BiConsumer<Buffer, Protocol<Key>> protocol) {
 		this.protocol = protocol;
-		return null;
-	}
-	
-	private void dip(ByteBuffer buffer) {
-		//Fill the packet from the stream;
+		return this;
 	}
 	
 	private void takeHead() {
 		buffer.compact();
-		//Dip till we have one headers worth of bytes.
-		while (buffer.remaining() < buffer.capacity())
-			dip(buffer);
-		//TODO add some anti corruption measures of some kind.
 		
 		//Use protocol to find the next packets size.
 		protocol.accept(buffer, new Protocol<>() {
@@ -72,16 +78,11 @@ public class BaseChannel<Key> implements Channel<Key> {
 	
 	private void takeBody(int length, Key key) {
 		buffer.compact();
-		//Ensure we have a long enough packet buffer.
-		if (buffer.capacity() < length)
-			buffer = allocate(length);
-		//Dip till we have a full packet.
-		while (buffer.remaining() < length)
-			dip(buffer);
+		buffer.dip(length);
 		
 		//Track the buffers position before letting listeners read.
 		int position = buffer.position();
-		for (BiConsumer<Key, ByteBuffer> listener : getReceiveListeners())
+		for (BiConsumer<Key, Buffer> listener : getReceiveListeners())
 			listener.accept(key, buffer);
 		
 		//Make sure the buffer is positioned correctly in case not all bytes are read.

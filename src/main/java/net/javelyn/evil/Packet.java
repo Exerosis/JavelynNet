@@ -1,11 +1,11 @@
 package net.javelyn.evil;
 
-import java.nio.ByteBuffer;
+import net.javelyn.Buffer;
 
 public interface Packet {
 	byte opcode();
 	
 	int length();
 	
-	void received(ByteBuffer buffer);
+	void received(Buffer buffer);
 }

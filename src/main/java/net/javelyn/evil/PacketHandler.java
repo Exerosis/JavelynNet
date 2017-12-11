@@ -1,17 +1,17 @@
 package net.javelyn.evil;
 
+import net.javelyn.Buffer;
 import net.javelyn.Channel;
 
-import java.nio.ByteBuffer;
 import java.util.function.BiConsumer;
 
-public class PacketHandler implements BiConsumer<Byte, ByteBuffer> {
+public class PacketHandler implements BiConsumer<Byte, Buffer> {
 	private final Packet[] packets = new Packet[255];
 	
 	//To support evil ways of doing things >:|
 	public PacketHandler(Channel<Byte> parent) {
-		parent.header(5, (header, protocol) -> {
-			byte key = header.get();
+		parent.header((header, protocol) -> {
+			byte key = header.next();
 			Packet packet = packets[key];
 			if (packet == null)
 				throw new RuntimeException("No packet with opcode " + key + " was registered!");
@@ -26,7 +26,7 @@ public class PacketHandler implements BiConsumer<Byte, ByteBuffer> {
 	}
 	
 	@Override
-	public void accept(Byte key, ByteBuffer buffer) {
+	public void accept(Byte key, Buffer buffer) {
 		packets[key].received(buffer);
 	}
 }
